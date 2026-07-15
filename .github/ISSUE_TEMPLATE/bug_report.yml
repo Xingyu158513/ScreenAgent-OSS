@@ -1,0 +1,55 @@
+name: Bug report
+description: Report a reproducible ScreenAgent problem without private data.
+title: "[Bug]: "
+labels: [bug, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not attach recordings, rclone configs, credentials, private URLs, or unredacted logs.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the observable behavior and what you expected.
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Windows, PowerShell, OBS, rclone, and ScreenAgent versions.
+    validations:
+      required: true
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Failure stage
+      options:
+        - Installation or configuration
+        - Starting OBS recording
+        - Waiting for a stable file
+        - Uploading
+        - Remote verification
+        - Local movement
+        - Uninstall
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Redacted log excerpt
+      description: Remove names, paths, titles, URLs, usernames, and credentials. Leave empty if unsure.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy confirmation
+      options:
+        - label: I reviewed the report and did not include recordings, credentials, rclone configuration, private URLs, or unredacted personal paths.
+          required: true
