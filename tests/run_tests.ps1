@@ -211,6 +211,16 @@ Invoke-Test 'Recursive program removal requires exact path and confirmation' {
     }
 }
 
+Invoke-Test 'Acceptance install root is restricted to Windows temp' {
+    $Default = Join-Path $env:USERPROFILE 'ScreenAgent'
+    Assert-Equal ([System.IO.Path]::GetFullPath($Default).TrimEnd('\')) (Resolve-ScreenAgentInstallRoot -DefaultRoot $Default -AcceptanceMode $false -RequestedRoot 'C:\unexpected') 'Normal mode must ignore override.'
+    $Requested = Join-Path ([System.IO.Path]::GetTempPath()) ('screenagent-acceptance-' + [guid]::NewGuid().ToString('N'))
+    Assert-Equal ([System.IO.Path]::GetFullPath($Requested).TrimEnd('\')) (Resolve-ScreenAgentInstallRoot -DefaultRoot $Default -AcceptanceMode $true -RequestedRoot $Requested) 'Acceptance temp root should be accepted.'
+    $Threw = $false
+    try { Resolve-ScreenAgentInstallRoot -DefaultRoot $Default -AcceptanceMode $true -RequestedRoot 'C:\ScreenAgent-Escape' | Out-Null } catch { $Threw = $true }
+    Assert-True $Threw 'Acceptance root outside Windows temp must be rejected.'
+}
+
 Invoke-Test 'Scheduled task name is fixed and cannot be redirected by config' {
     $Installer = Get-Content -LiteralPath (Join-Path $ProjectRoot 'install.ps1') -Raw -Encoding UTF8
     $Uninstaller = Get-Content -LiteralPath (Join-Path $ProjectRoot 'uninstall.ps1') -Raw -Encoding UTF8

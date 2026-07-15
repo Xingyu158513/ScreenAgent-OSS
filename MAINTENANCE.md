@@ -34,6 +34,8 @@ A release requires:
 
 Release candidates use `-rcN`. Stable tags are created only after the manual integration checklist is complete.
 
+Before the disposable-account integration check, maintainers can run `tests/acceptance/run_acceptance.ps1` against the release archive. This deterministic harness uses a temporary profile and a fake rclone endpoint; it does not replace a separate Windows account or VM. When Windows Sandbox is available, `tests/windows-sandbox/run_windows_sandbox.ps1` repeats the packaged-artifact check in a fresh, network-disabled Windows instance and writes its evidence under `dist/windows-sandbox-output`.
+
 ## Routine maintenance
 
 At least monthly while the project is active:

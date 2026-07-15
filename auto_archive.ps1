@@ -74,6 +74,9 @@ function Join-RemotePath {
 function Load-Config {
     $Root = Join-Path $env:USERPROFILE 'ScreenAgent'
     $ConfigPath = Join-Path $Root 'config\config.json'
+    if ($env:SCREENAGENT_ACCEPTANCE_MODE -eq '1' -and -not [string]::IsNullOrWhiteSpace($env:SCREENAGENT_CONFIG_PATH)) {
+        $ConfigPath = [System.IO.Path]::GetFullPath($env:SCREENAGENT_CONFIG_PATH)
+    }
     if (-not (Test-Path -LiteralPath $ConfigPath)) {
         throw "找不到配置文件：$ConfigPath"
     }
@@ -456,6 +459,9 @@ while ($true) {
     catch {
         Write-AgentMessage "扫描循环异常：$($_.Exception.Message)"
         Write-Report "扫描循环异常：$($_.Exception.Message)"
+    }
+    if ($env:SCREENAGENT_ACCEPTANCE_MODE -eq '1' -and $env:SCREENAGENT_RUN_ONCE -eq '1') {
+        break
     }
     $Delay = Get-Random -Minimum $ScanMin -Maximum ($ScanMax + 1)
     Start-Sleep -Seconds $Delay

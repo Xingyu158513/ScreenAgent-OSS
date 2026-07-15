@@ -180,6 +180,29 @@ function Remove-ScreenAgentProgramDirectory {
     return $true
 }
 
+function Resolve-ScreenAgentInstallRoot {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$DefaultRoot,
+        [Parameter(Mandatory = $true)][bool]$AcceptanceMode,
+        [AllowNull()][string]$RequestedRoot
+    )
+
+    if (-not $AcceptanceMode) {
+        return [System.IO.Path]::GetFullPath($DefaultRoot).TrimEnd('\')
+    }
+    if ([string]::IsNullOrWhiteSpace($RequestedRoot)) {
+        throw 'Acceptance mode requires an explicit temporary install root.'
+    }
+
+    $Resolved = [System.IO.Path]::GetFullPath($RequestedRoot).TrimEnd('\')
+    $TempRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath()).TrimEnd('\')
+    if (-not (Test-ScreenAgentPathWithinRoot -Path $Resolved -Root $TempRoot)) {
+        throw "Acceptance install root must be inside the Windows temporary directory: $Resolved"
+    }
+    return $Resolved
+}
+
 function Test-ScreenAgentPathWithinRoot {
     [CmdletBinding()]
     param(
@@ -275,6 +298,7 @@ Export-ModuleMember -Function @(
     'Protect-ScreenAgentCredentialFile',
     'Get-ScreenAgentScheduledTaskSpec',
     'Remove-ScreenAgentProgramDirectory',
+    'Resolve-ScreenAgentInstallRoot',
     'Test-ScreenAgentPathWithinRoot',
     'Assert-ScreenAgentSafeSourceFile',
     'Get-ScreenAgentUniquePath',

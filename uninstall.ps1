@@ -6,13 +6,21 @@ function Write-Step {
 }
 
 $TaskName = 'ScreenAgent-AutoUpload'
-$Root = Join-Path $env:USERPROFILE 'ScreenAgent'
-$AppDir = Join-Path $Root 'app'
-$ConfigPath = Join-Path $Root 'config\config.json'
 $SecurityModule = Join-Path $PSScriptRoot 'lib\ScreenAgent.Security.psm1'
 if (Test-Path -LiteralPath $SecurityModule) {
     Import-Module $SecurityModule -Force
 }
+$AcceptanceMode = $env:SCREENAGENT_ACCEPTANCE_MODE -eq '1'
+if ($AcceptanceMode -and -not (Get-Command Resolve-ScreenAgentInstallRoot -ErrorAction SilentlyContinue)) {
+    throw '验收模式需要安全模块。'
+}
+$Root = if ($AcceptanceMode) {
+    Resolve-ScreenAgentInstallRoot -DefaultRoot (Join-Path $env:USERPROFILE 'ScreenAgent') -AcceptanceMode $true -RequestedRoot $env:SCREENAGENT_INSTALL_ROOT
+} else {
+    Join-Path $env:USERPROFILE 'ScreenAgent'
+}
+$AppDir = Join-Path $Root 'app'
+$ConfigPath = Join-Path $Root 'config\config.json'
 $ProductName = 'ScreenAgent'
 $ShortcutName = '启动录制-ScreenAgent'
 if (Test-Path -LiteralPath $ConfigPath) {
@@ -27,7 +35,7 @@ if (Test-Path -LiteralPath $ConfigPath) {
     }
     catch {}
 }
-$Desktop = [Environment]::GetFolderPath('Desktop')
+$Desktop = if ($AcceptanceMode) { Join-Path $Root 'desktop' } else { [Environment]::GetFolderPath('Desktop') }
 $Shortcuts = @(
     (Join-Path $Desktop ($ShortcutName + '.lnk')),
     (Join-Path $Desktop ("查看 $ProductName 日志.lnk")),
@@ -40,6 +48,10 @@ Write-Host 'ScreenAgent 卸载程序' -ForegroundColor Green
 Write-Host ''
 
 Write-Step '停止并删除计划任务'
+if ($AcceptanceMode -and $env:SCREENAGENT_ACCEPTANCE_SKIP_TASK -eq '1') {
+    Write-Host '验收模式：跳过真实计划任务操作。'
+}
+else {
 try {
     $Task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
     if ($Task) {
@@ -54,6 +66,7 @@ try {
 catch {
     Write-Host "删除计划任务失败：$($_.Exception.Message)" -ForegroundColor Yellow
 }
+}
 
 Write-Step '删除桌面快捷方式'
 foreach ($Shortcut in $Shortcuts) {
@@ -66,7 +79,7 @@ foreach ($Shortcut in $Shortcuts) {
 Write-Host ''
 Write-Host '默认不会删除录屏文件、日志和配置。' -ForegroundColor Yellow
 Write-Host "用户数据目录：$Root"
-$DeleteApp = Read-Host '是否删除程序文件 app 目录？输入 DELETEAPP 确认'
+$DeleteApp = if ($AcceptanceMode -and $env:SCREENAGENT_UNINSTALL_DELETE_APP -eq '1') { 'DELETEAPP' } else { Read-Host '是否删除程序文件 app 目录？输入 DELETEAPP 确认' }
 if ($DeleteApp -eq 'DELETEAPP') {
     if (Get-Command Remove-ScreenAgentProgramDirectory -ErrorAction SilentlyContinue) {
         try {

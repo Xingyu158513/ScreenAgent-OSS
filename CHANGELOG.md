@@ -15,11 +15,14 @@
 
 - Dependency-free PowerShell safety tests.
 - Windows CI.
+- A deterministic temporary-profile acceptance harness for install, failed upload retention, verified move, and uninstall data preservation.
+- A network-disabled Windows Sandbox runner for the same packaged-artifact acceptance flow.
 - MIT license, contribution guide, privacy policy, security policy, support policy, and community templates.
 
 ### Changed
 
 - Renamed the background worker to `auto_archive.ps1` to reflect non-destructive behavior.
+- Acceptance-only overrides are restricted to an explicit root under the Windows temporary directory.
 
 ## 1.0.0 - 2026-06-27
 

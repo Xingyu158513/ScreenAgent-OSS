@@ -34,11 +34,15 @@ if (-not (Test-Path -LiteralPath $SecurityModule)) {
 Import-Module $SecurityModule -Force
 
 $PackageDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$Root = Join-Path $env:USERPROFILE 'ScreenAgent'
+$AcceptanceMode = $env:SCREENAGENT_ACCEPTANCE_MODE -eq '1'
+$Root = Resolve-ScreenAgentInstallRoot `
+    -DefaultRoot (Join-Path $env:USERPROFILE 'ScreenAgent') `
+    -AcceptanceMode $AcceptanceMode `
+    -RequestedRoot $env:SCREENAGENT_INSTALL_ROOT
 $AppDir = Join-Path $Root 'app'
 $ConfigDir = Join-Path $Root 'config'
 $DocsDir = Join-Path $Root 'docs'
-$Desktop = [Environment]::GetFolderPath('Desktop')
+$Desktop = if ($AcceptanceMode) { Join-Path $Root 'desktop' } else { [Environment]::GetFolderPath('Desktop') }
 $TaskSpec = Get-ScreenAgentScheduledTaskSpec -AppDirectory $AppDir
 $TaskName = $TaskSpec.TaskName
 
@@ -53,6 +57,7 @@ $Dirs = @(
     $AppDir,
     $ConfigDir,
     $DocsDir,
+    $Desktop,
     (Join-Path $Root 'recordings'),
     (Join-Path $Root 'recordings\raw'),
     (Join-Path $Root 'recordings\uploaded'),
@@ -88,13 +93,19 @@ if (Test-Path -LiteralPath (Join-Path $PackageDir 'config\config.json')) {
     Copy-Item -LiteralPath (Join-Path $PackageDir 'config\config.json') -Destination (Join-Path $ConfigDir 'config.template.json') -Force
 }
 
-Write-Step '启动配置向导'
-& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $AppDir 'config_wizard.ps1')
-if ($LASTEXITCODE -ne 0) {
-    throw '配置向导未成功完成。'
+$ConfigPath = Join-Path $ConfigDir 'config.json'
+if ($AcceptanceMode -and -not [string]::IsNullOrWhiteSpace($env:SCREENAGENT_UNATTENDED_CONFIG)) {
+    Write-Step '验收模式：导入非交互测试配置'
+    Copy-Item -LiteralPath $env:SCREENAGENT_UNATTENDED_CONFIG -Destination $ConfigPath -Force
+}
+else {
+    Write-Step '启动配置向导'
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $AppDir 'config_wizard.ps1')
+    if ($LASTEXITCODE -ne 0) {
+        throw '配置向导未成功完成。'
+    }
 }
 
-$ConfigPath = Join-Path $ConfigDir 'config.json'
 if (-not (Test-Path -LiteralPath $ConfigPath)) {
     throw "配置文件未生成：$ConfigPath"
 }
@@ -120,6 +131,10 @@ New-Shortcut `
     -Description "查看 $ProductName 日志"
 
 Write-Step '注册后台计划任务'
+if ($AcceptanceMode -and $env:SCREENAGENT_ACCEPTANCE_SKIP_TASK -eq '1') {
+    Write-Warn '验收模式：跳过真实计划任务注册。'
+}
+else {
 try {
     $Existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
     if ($Existing) {
@@ -141,9 +156,11 @@ catch {
     Write-Warn '可手动运行后台脚本：'
     Write-Host ('powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{0}"' -f (Join-Path $AppDir 'auto_archive.ps1'))
 }
+}
 
 Write-Host ''
 Write-Host '安装完成。' -ForegroundColor Green
 Write-Host '请确认 OBS 录制路径设置为：' (Join-Path $Root 'recordings\raw')
-Write-Host '安装报告：' (Join-Path $ConfigDir 'install_report.md')
+$InstallReport = Join-Path $ConfigDir 'install_report.md'
+if (Test-Path -LiteralPath $InstallReport) { Write-Host '安装报告：' $InstallReport }
 Write-Host ''
