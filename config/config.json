@@ -1,0 +1,14 @@
+﻿{
+  "product_name": "ScreenAgent",
+  "base_dir": "%USERPROFILE%\\ScreenAgent",
+  "obs_exe": "",
+  "rclone_exe": "",
+  "rclone_config_path": "%USERPROFILE%\\ScreenAgent\\config\\rclone.conf",
+  "remote_name": "screenagent",
+  "cloud_folder_name": "ScreenAgent",
+  "remote_root": "screenagent:ScreenAgent",
+  "cleanup_mode": "move_after_verified_upload",
+  "task_name": "ScreenAgent-AutoUpload",
+  "scan_interval_seconds": 15,
+  "stable_seconds": 12
+}

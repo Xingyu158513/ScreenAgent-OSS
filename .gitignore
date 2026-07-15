@@ -1,0 +1,25 @@
+# Runtime data and credentials
+config/config.local.json
+*.conf
+rclone.conf
+recordings/
+logs/
+sessions/
+install_report.md
+
+# Downloaded binaries and release output
+tools/
+rclone.exe
+dist/
+*.zip
+*.sha256
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Temporary files
+*.tmp
+*.log

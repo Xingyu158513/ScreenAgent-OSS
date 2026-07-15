@@ -1,0 +1,66 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ScreenAgent · 开始使用</title>
+  <style>
+    :root{--ink:#18212f;--muted:#667085;--line:#d9e1ea;--brand:#2367d1;--safe:#147d64;--bg:#f4f7fb}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:"Segoe UI","Microsoft YaHei",sans-serif;line-height:1.65}
+    main{max-width:980px;margin:auto;padding:48px 24px 72px}.hero{background:linear-gradient(135deg,#172a46,#2367d1);color:white;border-radius:22px;padding:44px;box-shadow:0 18px 50px #183f7826}
+    h1{font-size:42px;margin:0 0 8px;letter-spacing:-1px}.tag{font-size:19px;margin:0;opacity:.9}.version{display:inline-block;margin-top:20px;padding:5px 11px;border:1px solid #ffffff55;border-radius:99px;font-size:13px}
+    h2{margin:38px 0 14px;font-size:24px}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.card{background:white;border:1px solid var(--line);border-radius:15px;padding:22px}.card h3{margin:0 0 8px;font-size:18px}.num{display:inline-grid;place-items:center;width:28px;height:28px;background:#e9f1ff;color:var(--brand);border-radius:8px;font-weight:700;margin-right:8px}
+    .button{display:inline-block;text-decoration:none;color:white;background:var(--brand);padding:10px 16px;border-radius:9px;margin:4px 8px 4px 0;font-weight:600}.button.alt{background:white;color:var(--brand);border:1px solid #a9c6f5}.safe{border-left:5px solid var(--safe);background:#edf9f5;padding:18px 20px;border-radius:10px}.links a{display:block;color:var(--brand);margin:7px 0}.small{color:var(--muted);font-size:14px}code{background:#edf1f6;padding:2px 5px;border-radius:4px}footer{margin-top:42px;color:var(--muted);font-size:13px}
+    @media(max-width:760px){.grid{grid-template-columns:1fr}.hero{padding:30px}h1{font-size:34px}}
+  </style>
+</head>
+<body><main>
+  <section class="hero">
+    <h1>ScreenAgent</h1>
+    <p class="tag">把录屏、归档和云端验证连成一个安全、可恢复的流程。</p>
+    <span class="version">Windows 公开候选版 1.1.0</span>
+  </section>
+
+  <h2>三步开始</h2>
+  <section class="grid">
+    <article class="card"><h3><span class="num">1</span>检查环境</h3><p>双击 <code>01_检查电脑环境.bat</code>，确认 Windows、PowerShell、目录权限和依赖。</p></article>
+    <article class="card"><h3><span class="num">2</span>准备依赖</h3><p>缺少 OBS 或 rclone 时，双击 <code>02_下载所需软件.bat</code> 打开官方页面。</p></article>
+    <article class="card"><h3><span class="num">3</span>安装</h3><p>双击 <code>03_安装ScreenAgent.bat</code>，跟随中文向导完成云端、OBS 和清理策略配置。</p></article>
+  </section>
+
+  <h2>安全原则</h2>
+  <div class="safe"><strong>默认不删除。</strong> 默认策略是上传验证成功后移动到 <code>recordings\uploaded</code>。上传失败、验证失败、rclone 异常、远程重名检查失败或文件大小不一致时，本地视频都会保留。</div>
+
+  <h2>日常使用</h2>
+  <section class="grid">
+    <article class="card"><h3>开始录制</h3><p>双击桌面的“启动录制-产品名”，填写标题和分类。OBS 会自动启动录制。</p></article>
+    <article class="card"><h3>停止录制</h3><p>回到 OBS，点击“停止录制”。后台程序会等待文件稳定，然后上传和验证。</p></article>
+    <article class="card"><h3>查看结果</h3><p>双击桌面的“查看 产品名 日志”。失败文件会继续保留在 raw。</p></article>
+  </section>
+
+  <h2>文档导航</h2>
+  <div class="card links">
+    <a href="使用说明/安装前准备.md">安装前准备</a>
+    <a href="使用说明/快速开始.md">快速开始</a>
+    <a href="使用说明/安全与数据处理.md">安全与数据处理</a>
+    <a href="使用说明/故障排查.md">故障排查</a>
+    <a href="使用说明/交付验收清单.md">交付验收清单</a>
+    <a href="使用说明/发行说明.md">发行说明与已知限制</a>
+    <a href="使用说明/完整说明.md">完整说明</a>
+  </div>
+
+  <h2>官方软件下载</h2>
+  <div class="card links">
+    <a href="https://obsproject.com/download">OBS Studio 官方下载</a>
+    <a href="https://rclone.org/downloads/">rclone 官方下载</a>
+    <a href="https://help.jianguoyun.com/?p=2064">坚果云第三方应用授权说明</a>
+    <p class="small">不要从不明镜像下载 OBS 或 rclone；不要把云盘登录密码发给他人。</p>
+  </div>
+
+  <h2>卸载</h2>
+  <p>双击 <code>99_卸载ScreenAgent.bat</code>。卸载器只移除任务、快捷方式和经确认的程序脚本；录像、日志和配置始终保留，需要用户在资源管理器中手动检查后处理。</p>
+
+  <h2>收到的校验文件有什么用？</h2>
+  <div class="card"><p>正式发布时会同时提供 ZIP 和 SHA-256 校验文件，用于确认下载内容没有损坏或被替换。</p></div>
+  <footer>ScreenAgent 1.1.0 候选版 · 本页可离线打开，外部下载链接需要联网。</footer>
+</main></body></html>
