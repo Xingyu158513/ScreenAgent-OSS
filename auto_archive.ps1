@@ -1,5 +1,48 @@
 ﻿$ErrorActionPreference = 'Continue'
 
+$RunMode = 'Recovery'
+$SessionPath = ''
+$NoFileTimeoutSeconds = 120
+$DeadlineMinutes = 720
+$QuietSeconds = 45
+
+for ($ArgumentIndex = 0; $ArgumentIndex -lt $args.Count; $ArgumentIndex++) {
+    $Argument = [string]$args[$ArgumentIndex]
+    switch ($Argument.ToLowerInvariant()) {
+        '-runmode' {
+            $ArgumentIndex++
+            if ($ArgumentIndex -ge $args.Count) { throw '-RunMode 缺少参数。' }
+            $RunMode = [string]$args[$ArgumentIndex]
+        }
+        '-sessionpath' {
+            $ArgumentIndex++
+            if ($ArgumentIndex -ge $args.Count) { throw '-SessionPath 缺少参数。' }
+            $SessionPath = [string]$args[$ArgumentIndex]
+        }
+        '-nofiletimeoutseconds' {
+            $ArgumentIndex++
+            if ($ArgumentIndex -ge $args.Count) { throw '-NoFileTimeoutSeconds 缺少参数。' }
+            $NoFileTimeoutSeconds = [int]$args[$ArgumentIndex]
+        }
+        '-deadlineminutes' {
+            $ArgumentIndex++
+            if ($ArgumentIndex -ge $args.Count) { throw '-DeadlineMinutes 缺少参数。' }
+            $DeadlineMinutes = [int]$args[$ArgumentIndex]
+        }
+        '-quietseconds' {
+            $ArgumentIndex++
+            if ($ArgumentIndex -ge $args.Count) { throw '-QuietSeconds 缺少参数。' }
+            $QuietSeconds = [int]$args[$ArgumentIndex]
+        }
+        default { throw "未知参数：$Argument" }
+    }
+}
+
+if ($RunMode -notin @('Session', 'Recovery')) { throw "不支持的运行模式：$RunMode" }
+if ($NoFileTimeoutSeconds -lt 5 -or $NoFileTimeoutSeconds -gt 3600) { throw 'NoFileTimeoutSeconds 必须介于 5 到 3600。' }
+if ($DeadlineMinutes -lt 1 -or $DeadlineMinutes -gt 1440) { throw 'DeadlineMinutes 必须介于 1 到 1440。' }
+if ($QuietSeconds -lt 0 -or $QuietSeconds -gt 600) { throw 'QuietSeconds 必须介于 0 到 600。' }
+
 $SecurityModule = Join-Path $PSScriptRoot 'lib\ScreenAgent.Security.psm1'
 if (-not (Test-Path -LiteralPath $SecurityModule)) {
     throw "安全模块不存在：$SecurityModule"
@@ -92,6 +135,12 @@ function Get-CurrentSession {
         start_time = (Get-Date).ToString('s')
         cleanup_mode = $script:DefaultCleanupMode
         is_recovered = $true
+    }
+    if ($null -ne $script:ExplicitSession) {
+        return $script:ExplicitSession
+    }
+    if ($script:RunMode -eq 'Recovery' -and $env:SCREENAGENT_ACCEPTANCE_MODE -ne '1') {
+        return $Fallback
     }
     if (-not (Test-Path -LiteralPath $script:CurrentSessionPath)) {
         return $Fallback
@@ -287,10 +336,10 @@ function Complete-LocalCleanup {
 function Process-VideoFile {
     param([string]$Path)
     $LocalKey = 'local::' + $Path.ToLowerInvariant()
-    if (Test-Processed -Key $LocalKey) { return }
+    if (Test-Processed -Key $LocalKey) { return 'AlreadyProcessed' }
     if (-not (Test-FileStable -Path $Path)) {
         Write-AgentMessage "文件仍在写入，稍后重试：$Path"
-        return
+        return 'Pending'
     }
 
     $Session = Get-CurrentSession
@@ -314,7 +363,7 @@ function Process-VideoFile {
         }
         catch {
             Write-IndexLog -Id $SessionId -StartTime $StartTime -EndTime (Get-NowText) -Category $Category -Topic $Topic -Title $Title -RemotePath $RemoteDir -LocalPath $Path -LocalDeleted 'false' -Status 'remote_name_check_failed' -Reason $_.Exception.Message
-            return
+            return 'Failed'
         }
     }
     $TargetPath = Join-Path (Split-Path -Parent $Path) $CanonicalName
@@ -331,11 +380,12 @@ function Process-VideoFile {
             $CleanupResult = Complete-LocalCleanup -Mode 'move_after_verified_upload' -Path $TargetPath
             Add-Processed -Key ('local::' + $TargetPath.ToLowerInvariant())
             Write-IndexLog -Id $SessionId -StartTime $StartTime -EndTime (Get-NowText) -Category $Category -Topic $Topic -Title $Title -RemotePath '' -LocalPath $CleanupResult.LocalPath -LocalDeleted $CleanupResult.LocalDeleted -Status 'local_saved' -Reason '本地保存模式，文件已移入 uploaded'
+            return 'Processed'
         }
         catch {
             Write-IndexLog -Id $SessionId -StartTime $StartTime -EndTime (Get-NowText) -Category $Category -Topic $Topic -Title $Title -RemotePath '' -LocalPath $TargetPath -LocalDeleted 'false' -Status 'local_save_failed' -Reason $_.Exception.Message
+            return 'Failed'
         }
-        return
     }
 
     $RemotePath = Join-RemotePath -Base $RemoteDir -Child $CanonicalName
@@ -347,18 +397,18 @@ function Process-VideoFile {
     }
     catch {
         Write-IndexLog -Id $SessionId -StartTime $StartTime -EndTime (Get-NowText) -Category $Category -Topic $Topic -Title $Title -RemotePath $RemotePath -LocalPath $TargetPath -LocalDeleted 'false' -Status 'upload_failed' -Reason $_.Exception.Message
-        return
+        return 'Failed'
     }
     $Upload = Invoke-RcloneCapture -Arguments @('copyto', $TargetPath, $RemotePath, '--create-empty-src-dirs', '--immutable')
     if ($Upload.ExitCode -ne 0) {
         Write-IndexLog -Id $SessionId -StartTime $StartTime -EndTime (Get-NowText) -Category $Category -Topic $Topic -Title $Title -RemotePath $RemotePath -LocalPath $TargetPath -LocalDeleted 'false' -Status 'upload_failed' -Reason $Upload.Output
-        return
+        return 'Failed'
     }
 
     $Exists = Test-RemoteFileExists -RemoteDir $RemoteDir -FileName $CanonicalName -LocalSize $LocalSize
     if (-not $Exists) {
         Write-IndexLog -Id $SessionId -StartTime $StartTime -EndTime (Get-NowText) -Category $Category -Topic $Topic -Title $Title -RemotePath $RemotePath -LocalPath $TargetPath -LocalDeleted 'false' -Status 'verify_failed' -Reason '上传命令成功，但云端未验证到同名同大小文件'
-        return
+        return 'Failed'
     }
 
     try {
@@ -366,9 +416,69 @@ function Process-VideoFile {
         Add-Processed -Key $RemotePath
         Add-Processed -Key ('local::' + $TargetPath.ToLowerInvariant())
         Write-IndexLog -Id $SessionId -StartTime $StartTime -EndTime (Get-NowText) -Category $Category -Topic $Topic -Title $Title -RemotePath $RemotePath -LocalPath $CleanupResult.LocalPath -LocalDeleted $CleanupResult.LocalDeleted -Status $CleanupResult.Status -Reason $CleanupResult.Reason
+        return 'Processed'
     }
     catch {
         Write-IndexLog -Id $SessionId -StartTime $StartTime -EndTime (Get-NowText) -Category $Category -Topic $Topic -Title $Title -RemotePath $RemotePath -LocalPath $TargetPath -LocalDeleted 'false' -Status 'cleanup_failed' -Reason $_.Exception.Message
+        return 'Failed'
+    }
+}
+
+function Resolve-SessionPath {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path)) { throw 'Session 模式必须提供 -SessionPath。' }
+    $Resolved = [System.IO.Path]::GetFullPath($Path)
+    if ([System.IO.Path]::GetExtension($Resolved) -ine '.json') { throw "会话文件必须是 JSON：$Resolved" }
+    if (-not (Test-ScreenAgentPathWithinRoot -Path $Resolved -Root $script:SessionDir)) {
+        throw "拒绝读取 sessions 目录以外的会话文件：$Resolved"
+    }
+    if (-not (Test-Path -LiteralPath $Resolved -PathType Leaf)) { throw "会话文件不存在：$Resolved" }
+    return $Resolved
+}
+
+function Get-SessionCandidateFiles {
+    $Files = @(Get-ChildItem -LiteralPath $script:RawDir -File -ErrorAction SilentlyContinue |
+        Where-Object { $script:Extensions -contains $_.Extension.ToLowerInvariant() } |
+        Sort-Object LastWriteTime)
+    if ($script:RunMode -ne 'Session') { return $Files }
+
+    $Candidates = @()
+    foreach ($File in $Files) {
+        $Key = $File.FullName.ToLowerInvariant()
+        $Baseline = $script:BaselineByPath[$Key]
+        if ($null -eq $Baseline) {
+            if ($File.LastWriteTimeUtc -ge $script:SessionStartUtc.AddSeconds(-2)) { $Candidates += $File }
+            continue
+        }
+
+        # A path that already existed before this session never belongs to the
+        # new session, even if an older recording is still growing. Startup
+        # recovery handles it with recovered metadata once it becomes stable.
+        continue
+    }
+    return $Candidates
+}
+
+function Set-SessionWorkerStatus {
+    param(
+        [string]$Status,
+        [string]$Reason
+    )
+    if ($script:RunMode -ne 'Session' -or $null -eq $script:ExplicitSession) { return }
+    $script:ExplicitSession | Add-Member -NotePropertyName status -NotePropertyValue $Status -Force
+    $script:ExplicitSession | Add-Member -NotePropertyName worker_reason -NotePropertyValue $Reason -Force
+    $script:ExplicitSession | Add-Member -NotePropertyName worker_updated_at -NotePropertyValue ((Get-Date).ToString('s')) -Force
+    $TempPath = $script:ResolvedSessionPath + '.tmp.' + $PID
+    $Utf8Bom = New-Object System.Text.UTF8Encoding($true)
+    try {
+        [System.IO.File]::WriteAllText($TempPath, ($script:ExplicitSession | ConvertTo-Json -Depth 8), $Utf8Bom)
+        [System.IO.File]::Replace($TempPath, $script:ResolvedSessionPath, $null)
+    }
+    catch {
+        if (Test-Path -LiteralPath $TempPath) {
+            Move-Item -LiteralPath $TempPath -Destination $script:ResolvedSessionPath -Force -ErrorAction SilentlyContinue
+        }
+        Write-Report "更新会话状态失败：$($_.Exception.Message)"
     }
 }
 
@@ -412,6 +522,12 @@ if ([string]::IsNullOrWhiteSpace($script:RcloneConfigPath)) {
 $script:RemoteRoot = [string]$Config.remote_root
 $script:DefaultCleanupMode = [string]$Config.cleanup_mode
 $script:DefaultCleanupMode = Resolve-ScreenAgentCleanupMode -Mode $script:DefaultCleanupMode
+$script:RunMode = $RunMode
+$script:ExplicitSession = $null
+$script:ResolvedSessionPath = ''
+$script:BaselineByPath = @{}
+$script:SessionStartUtc = [DateTime]::UtcNow
+$script:Extensions = @('.mkv', '.mp4', '.mov')
 $script:SessionStaleHours = 6
 if ($Config.session_stale_hours) { $script:SessionStaleHours = [int]$Config.session_stale_hours }
 $script:StableSeconds = 12
@@ -428,6 +544,25 @@ if ($Config.scan_interval_seconds) {
 New-Item -ItemType Directory -Force -Path $script:RawDir, $script:UploadedDir, $script:LogDir, $script:SessionDir | Out-Null
 Initialize-Log
 
+if ($script:RunMode -eq 'Session') {
+    try {
+        $script:ResolvedSessionPath = Resolve-SessionPath -Path $SessionPath
+        $script:ExplicitSession = Get-Content -LiteralPath $script:ResolvedSessionPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        if (-not $script:ExplicitSession.id) { throw '会话文件缺少 id。' }
+        $StartText = [string]$script:ExplicitSession.start_time_utc
+        if ([string]::IsNullOrWhiteSpace($StartText)) { $StartText = [string]$script:ExplicitSession.start_time }
+        $ParsedStart = [DateTime]::MinValue
+        if ([DateTime]::TryParse($StartText, [ref]$ParsedStart)) { $script:SessionStartUtc = $ParsedStart.ToUniversalTime() }
+        foreach ($Baseline in @($script:ExplicitSession.baseline_files)) {
+            if ($Baseline.path) { $script:BaselineByPath[[string]$Baseline.path.ToLowerInvariant()] = $Baseline }
+        }
+    }
+    catch {
+        Write-Report "会话 worker 启动失败：$($_.Exception.Message)"
+        exit 1
+    }
+}
+
 if ($script:Mode -ne 'local_only') {
     if ([string]::IsNullOrWhiteSpace($script:RclonePath) -or -not (Test-Path -LiteralPath $script:RclonePath)) {
         Write-Report "rclone 不存在，后台任务无法上传：$script:RclonePath"
@@ -443,26 +578,124 @@ if ($script:Mode -ne 'local_only') {
     }
 }
 
-Write-AgentMessage 'ScreenAgent 后台任务已启动。'
-Write-Report '后台任务已启动。'
+Write-AgentMessage "ScreenAgent worker 已启动：$($script:RunMode)。"
+Write-Report "worker 已启动：$($script:RunMode)。"
 
-$Extensions = @('.mkv', '.mp4', '.mov')
-while ($true) {
+if ($script:RunMode -eq 'Recovery') {
     try {
-        $Files = Get-ChildItem -LiteralPath $script:RawDir -File -ErrorAction SilentlyContinue |
-            Where-Object { $Extensions -contains $_.Extension.ToLowerInvariant() } |
-            Sort-Object LastWriteTime
-        foreach ($File in $Files) {
-            Process-VideoFile -Path $File.FullName
+        foreach ($File in @(Get-SessionCandidateFiles)) {
+            Process-VideoFile -Path $File.FullName | Out-Null
+        }
+        Write-Report '遗漏恢复扫描已完成，worker 退出。'
+        exit 0
+    }
+    catch {
+        Write-AgentMessage "遗漏恢复扫描异常：$($_.Exception.Message)"
+        Write-Report "遗漏恢复扫描异常：$($_.Exception.Message)"
+        exit 1
+    }
+}
+
+$Mutex = $null
+$MutexCreated = $false
+$SafeMutexId = ([string]$script:ExplicitSession.id) -replace '[^A-Za-z0-9_.-]', '_'
+try {
+    $Mutex = New-Object System.Threading.Mutex($true, ('Local\ScreenAgent.Session.' + $SafeMutexId), [ref]$MutexCreated)
+    if (-not $MutexCreated) {
+        Write-Report "同一会话已有 worker，本进程退出：$SafeMutexId"
+        exit 0
+    }
+
+    # 先处理启动录制前已经留在 raw 中的稳定文件。它们使用 recovered 元数据，
+    # 不会被错误套用到刚创建的新会话；失败时仍留在本地等待以后恢复。
+    $SavedRunMode = $script:RunMode
+    $SavedExplicitSession = $script:ExplicitSession
+    try {
+        $script:RunMode = 'Recovery'
+        $script:ExplicitSession = $null
+        foreach ($Baseline in @($SavedExplicitSession.baseline_files)) {
+            if ($Baseline.path -and (Test-Path -LiteralPath ([string]$Baseline.path) -PathType Leaf)) {
+                Process-VideoFile -Path ([string]$Baseline.path) | Out-Null
+            }
         }
     }
     catch {
-        Write-AgentMessage "扫描循环异常：$($_.Exception.Message)"
-        Write-Report "扫描循环异常：$($_.Exception.Message)"
+        Write-Report "启动时遗漏恢复异常：$($_.Exception.Message)"
     }
-    if ($env:SCREENAGENT_ACCEPTANCE_MODE -eq '1' -and $env:SCREENAGENT_RUN_ONCE -eq '1') {
-        break
+    finally {
+        $script:RunMode = $SavedRunMode
+        $script:ExplicitSession = $SavedExplicitSession
     }
-    $Delay = Get-Random -Minimum $ScanMin -Maximum ($ScanMax + 1)
-    Start-Sleep -Seconds $Delay
+
+    Set-SessionWorkerStatus -Status 'worker_waiting' -Reason '等待本次录制文件完成写入'
+    $StartedAt = Get-Date
+    $NoFileDeadline = $StartedAt.AddSeconds($NoFileTimeoutSeconds)
+    $TotalDeadline = $StartedAt.AddMinutes($DeadlineMinutes)
+    $SeenCandidate = $false
+    $HadTerminalResult = $false
+    $LastTerminalAt = $null
+    $TerminalByPath = @{}
+
+    while ((Get-Date) -lt $TotalDeadline) {
+        $PendingCount = 0
+        try {
+            $Candidates = @(Get-SessionCandidateFiles)
+            if ($Candidates.Count -gt 0) { $SeenCandidate = $true }
+            foreach ($File in $Candidates) {
+                $CandidateKey = $File.FullName.ToLowerInvariant()
+                if ($TerminalByPath.ContainsKey($CandidateKey)) { continue }
+                $Result = Process-VideoFile -Path $File.FullName
+                if ($Result -eq 'Pending') {
+                    $PendingCount++
+                    continue
+                }
+                if ($Result -in @('Processed', 'Failed', 'AlreadyProcessed')) {
+                    $TerminalByPath[$CandidateKey] = $Result
+                    $HadTerminalResult = $true
+                    $LastTerminalAt = Get-Date
+                    if ($Result -eq 'Failed') {
+                        Set-SessionWorkerStatus -Status 'pending_retry' -Reason '处理失败；本地原文件已保留，等待下次恢复'
+                    }
+                }
+            }
+        }
+        catch {
+            Write-AgentMessage "会话扫描异常：$($_.Exception.Message)"
+            Write-Report "会话扫描异常：$($_.Exception.Message)"
+        }
+
+        if (-not $SeenCandidate -and (Get-Date) -ge $NoFileDeadline) {
+            Set-SessionWorkerStatus -Status 'no_file_timeout' -Reason '启动后未在限定时间内发现本次录像文件'
+            Write-Report '未发现本次录像文件，worker 有界退出。'
+            exit 0
+        }
+        if ($HadTerminalResult -and $PendingCount -eq 0 -and $null -ne $LastTerminalAt) {
+            if (((Get-Date) - $LastTerminalAt).TotalSeconds -ge $QuietSeconds) {
+                $HadFailure = @($TerminalByPath.Values | Where-Object { $_ -eq 'Failed' }).Count -gt 0
+                if ($HadFailure) {
+                    Set-SessionWorkerStatus -Status 'pending_retry' -Reason '会话处理结束；失败文件保留等待恢复'
+                }
+                else {
+                    Set-SessionWorkerStatus -Status 'completed' -Reason '本次录像已处理完成'
+                }
+                Write-Report '本次录像处理完成且安静期已到，worker 退出。'
+                exit 0
+            }
+        }
+
+        $Delay = Get-Random -Minimum $ScanMin -Maximum ($ScanMax + 1)
+        $RemainingSeconds = [Math]::Max(0, [int]($TotalDeadline - (Get-Date)).TotalSeconds)
+        if ($RemainingSeconds -le 0) { break }
+        Start-Sleep -Seconds ([Math]::Min($Delay, $RemainingSeconds))
+    }
+
+    Set-SessionWorkerStatus -Status 'deadline_reached' -Reason '会话 worker 达到最长运行时间；未完成文件保留等待恢复'
+    Write-Report '会话 worker 达到总 deadline，本地文件保持不动，worker 退出。'
+    exit 0
+}
+finally {
+    if ($null -ne $Mutex) {
+        if ($MutexCreated) { try { $Mutex.ReleaseMutex() } catch {} }
+        $Mutex.Dispose()
+    }
 }

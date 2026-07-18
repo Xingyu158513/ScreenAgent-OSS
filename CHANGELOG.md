@@ -23,6 +23,8 @@
 
 - Renamed the background worker to `auto_archive.ps1` to reflect non-destructive behavior.
 - Acceptance-only overrides are restricted to an explicit root under the Windows temporary directory.
+- Removed the login-triggered permanent scanner. Recording now starts a hidden, bounded session worker that exits after processing, timeout, or a fatal configuration error.
+- Upgrades safely stop and unregister known legacy ScreenAgent tasks and quarantine the old `auto_upload_delete.ps1` without touching recordings, configuration, logs, or sessions.
 
 ## 1.0.0 - 2026-06-27
 

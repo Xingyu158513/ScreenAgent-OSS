@@ -165,7 +165,7 @@ function Write-InstallReport {
         "- OBS 路径：$($Config.obs_exe)",
         "- 录制目录：$(Join-Path $Config.base_dir 'recordings\raw')",
         "- 云端路径：$($Config.remote_root)",
-        "- 后台任务名：$($Config.task_name)",
+        "- 后台处理：开始录制时按需启动，处理完成后自动退出",
         "- 本地处理策略：$Strategy",
         "",
         "## 如何启动",
