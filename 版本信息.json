@@ -1,7 +1,7 @@
 ﻿{
   "product": "ScreenAgent",
-  "version": "1.1.0",
-  "release_date": "unreleased",
+  "version": "1.1.0-rc2",
+  "release_date": "2026-07-19",
   "platform": "Windows PowerShell 5.1",
   "default_cleanup_mode": "move_after_verified_upload",
   "notes": "公开安全重构版。移除自动永久删除，凭据不再作为明文命令行参数。"

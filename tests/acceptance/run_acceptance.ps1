@@ -7,10 +7,10 @@ param(
 $ErrorActionPreference = 'Stop'
 $ProjectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 if ([string]::IsNullOrWhiteSpace($PackageZip)) {
-    $PackageZip = Join-Path $ProjectRoot 'dist\ScreenAgent-1.1.0-rc1-Windows.zip'
+    $PackageZip = Join-Path $ProjectRoot 'dist\ScreenAgent-1.1.0-rc2-Windows.zip'
 }
 if ([string]::IsNullOrWhiteSpace($ReportPath)) {
-    $ReportPath = Join-Path $ProjectRoot 'dist\ScreenAgent-1.1.0-rc1-acceptance-report.md'
+    $ReportPath = Join-Path $ProjectRoot 'dist\ScreenAgent-1.1.0-rc2-acceptance-report.md'
 }
 if (-not (Test-Path -LiteralPath $PackageZip -PathType Leaf)) { throw "Package not found: $PackageZip" }
 

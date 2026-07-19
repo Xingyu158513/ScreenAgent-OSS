@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.1.0 - Unreleased
+## 1.1.0-rc2 - 2026-07-19
 
 ### Security
 

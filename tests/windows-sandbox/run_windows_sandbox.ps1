@@ -9,7 +9,7 @@ if (-not (Test-Path -LiteralPath $SandboxExe -PathType Leaf)) {
     throw 'Windows Sandbox is not enabled. Enable Containers-DisposableClientVM and restart Windows first.'
 }
 
-$PackageZip = Join-Path $ProjectRoot 'dist\ScreenAgent-1.1.0-rc1-Windows.zip'
+$PackageZip = Join-Path $ProjectRoot 'dist\ScreenAgent-1.1.0-rc2-Windows.zip'
 if (-not (Test-Path -LiteralPath $PackageZip -PathType Leaf)) {
     throw "Package not found: $PackageZip"
 }
