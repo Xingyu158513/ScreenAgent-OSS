@@ -4,14 +4,14 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$ReportPath = Join-Path $OutputRoot 'ScreenAgent-1.1.0-rc1-windows-sandbox-report.md'
+$ReportPath = Join-Path $OutputRoot 'ScreenAgent-1.1.0-rc2-windows-sandbox-report.md'
 $StatusPath = Join-Path $OutputRoot 'windows-sandbox-status.txt'
 $ErrorPath = Join-Path $OutputRoot 'windows-sandbox-error.txt'
 $ExitCode = 1
 
 try {
     $AcceptanceScript = Join-Path $ProjectRoot 'tests\acceptance\run_acceptance.ps1'
-    $PackageZip = Join-Path $ProjectRoot 'dist\ScreenAgent-1.1.0-rc1-Windows.zip'
+    $PackageZip = Join-Path $ProjectRoot 'dist\ScreenAgent-1.1.0-rc2-Windows.zip'
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $AcceptanceScript `
         -PackageZip $PackageZip `
         -EnvironmentLabel 'Windows Sandbox (fresh disposable Windows instance; network disabled)' `
