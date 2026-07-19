@@ -45,12 +45,11 @@ try {
         cloud_folder_name = 'acceptance'
         remote_root = 'screenagent:acceptance'
         cleanup_mode = 'move_after_verified_upload'
-        task_name = 'ScreenAgent-AutoUpload'
         scan_interval_seconds = 5
         stable_seconds = 5
         cloud_type = 'webdav'
         shortcut_name = '启动录制-ScreenAgent-Acceptance'
-        config_version = 3
+        config_version = 4
     }
     $Utf8Bom = New-Object System.Text.UTF8Encoding($true)
     [System.IO.File]::WriteAllText($UnattendedConfig, ($Config | ConvertTo-Json -Depth 5), $Utf8Bom)
@@ -61,26 +60,27 @@ try {
     $env:SCREENAGENT_ACCEPTANCE_SKIP_TASK = '1'
     $env:SCREENAGENT_FAKE_REMOTE_ROOT = $FakeRemote
     $env:SCREENAGENT_CONFIG_PATH = Join-Path $InstallRoot 'config\config.json'
-    $env:SCREENAGENT_RUN_ONCE = '1'
 
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PackageRoot 'install.ps1')
     if ($LASTEXITCODE -ne 0) { throw "Acceptance install failed: $LASTEXITCODE" }
-    Assert-Acceptance (Test-Path -LiteralPath (Join-Path $InstallRoot 'app\auto_archive.ps1')) 'Installed worker is missing.'
+    Assert-Acceptance (Test-Path -LiteralPath (Join-Path $InstallRoot 'app\session_worker.ps1')) 'Installed session worker is missing.'
+    Assert-Acceptance (Test-Path -LiteralPath (Join-Path $InstallRoot 'app\recover_pending.ps1')) 'Installed recovery command is missing.'
     Assert-Acceptance (Test-Path -LiteralPath (Join-Path $InstallRoot 'desktop\启动录制-ScreenAgent-Acceptance.lnk')) 'Acceptance shortcut is missing.'
+    $ShortcutFiles = @(Get-ChildItem -LiteralPath (Join-Path $InstallRoot 'desktop') -Filter '*.lnk')
+    $ShortcutShell = New-Object -ComObject WScript.Shell
+    $RecoveryShortcuts = @($ShortcutFiles | Where-Object { $ShortcutShell.CreateShortcut($_.FullName).Arguments -match 'recover_pending\.ps1' })
+    Assert-Acceptance ($RecoveryShortcuts.Count -eq 1) 'Exactly one recovery shortcut must target recover_pending.ps1.'
     New-Item -ItemType File -Force -Path (Join-Path $InstallRoot 'config\rclone.conf') | Out-Null
     $Results.Install = 'passed (temporary root and shortcuts)'
 
-    $SessionDir = Join-Path $InstallRoot 'sessions'
     $RawDir = Join-Path $InstallRoot 'recordings\raw'
     $UploadedDir = Join-Path $InstallRoot 'recordings\uploaded'
     $LogsDir = Join-Path $InstallRoot 'logs'
 
-    $FailureSession = [ordered]@{ id='failure-001'; category='acceptance'; topic='upload-failure'; title='failure-case'; start_time=(Get-Date).ToString('s'); cleanup_mode='move_after_verified_upload' }
-    [System.IO.File]::WriteAllText((Join-Path $SessionDir 'current_session.json'), ($FailureSession | ConvertTo-Json), $Utf8Bom)
     $FailureSource = Join-Path $RawDir 'failure.mkv'
     [System.IO.File]::WriteAllBytes($FailureSource, [byte[]](1..64))
     $env:SCREENAGENT_FAKE_RCLONE_MODE = 'fail_upload'
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $InstallRoot 'app\auto_archive.ps1')
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $InstallRoot 'app\recover_pending.ps1')
     if ($LASTEXITCODE -ne 0) { throw "Failure scenario worker exited unexpectedly: $LASTEXITCODE" }
     $Retained = @(Get-ChildItem -LiteralPath $RawDir -File)
     Assert-Acceptance ($Retained.Count -eq 1) 'Upload failure did not retain exactly one local recording.'
@@ -88,12 +88,10 @@ try {
     Move-Item -LiteralPath $Retained[0].FullName -Destination (Join-Path $Evidence 'failure-retained.mkv')
     $Results.UploadFailure = 'passed (local file retained; uploaded directory unchanged)'
 
-    $SuccessSession = [ordered]@{ id='success-001'; category='acceptance'; topic='verified-move'; title='success-case'; start_time=(Get-Date).ToString('s'); cleanup_mode='move_after_verified_upload' }
-    [System.IO.File]::WriteAllText((Join-Path $SessionDir 'current_session.json'), ($SuccessSession | ConvertTo-Json), $Utf8Bom)
     $SuccessSource = Join-Path $RawDir 'success.mkv'
     [System.IO.File]::WriteAllBytes($SuccessSource, [byte[]](65..128))
     $env:SCREENAGENT_FAKE_RCLONE_MODE = 'success'
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $InstallRoot 'app\auto_archive.ps1')
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $InstallRoot 'app\recover_pending.ps1')
     if ($LASTEXITCODE -ne 0) { throw "Success scenario worker exited unexpectedly: $LASTEXITCODE" }
     Assert-Acceptance (@(Get-ChildItem -LiteralPath $RawDir -File).Count -eq 0) 'Verified upload left a file in raw.'
     $Uploaded = @(Get-ChildItem -LiteralPath $UploadedDir -File)
@@ -132,6 +130,6 @@ try {
     Write-Host "Acceptance report: $ReportPath" -ForegroundColor Green
 }
 finally {
-    Remove-Item Env:SCREENAGENT_ACCEPTANCE_MODE,Env:SCREENAGENT_INSTALL_ROOT,Env:SCREENAGENT_UNATTENDED_CONFIG,Env:SCREENAGENT_ACCEPTANCE_SKIP_TASK,Env:SCREENAGENT_FAKE_REMOTE_ROOT,Env:SCREENAGENT_CONFIG_PATH,Env:SCREENAGENT_RUN_ONCE,Env:SCREENAGENT_FAKE_RCLONE_MODE,Env:SCREENAGENT_UNINSTALL_DELETE_APP -ErrorAction SilentlyContinue
+    Remove-Item Env:SCREENAGENT_ACCEPTANCE_MODE,Env:SCREENAGENT_INSTALL_ROOT,Env:SCREENAGENT_UNATTENDED_CONFIG,Env:SCREENAGENT_ACCEPTANCE_SKIP_TASK,Env:SCREENAGENT_FAKE_REMOTE_ROOT,Env:SCREENAGENT_CONFIG_PATH,Env:SCREENAGENT_FAKE_RCLONE_MODE,Env:SCREENAGENT_UNINSTALL_DELETE_APP -ErrorAction SilentlyContinue
     if (Test-Path -LiteralPath $TestRoot) { Remove-Item -LiteralPath $TestRoot -Recurse -Force -ErrorAction SilentlyContinue }
 }

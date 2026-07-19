@@ -32,6 +32,11 @@ if (-not (Test-Path -LiteralPath $SecurityModule)) {
     throw "安全模块不存在：$SecurityModule"
 }
 Import-Module $SecurityModule -Force
+$MigrationModule = Join-Path $PSScriptRoot 'lib\ScreenAgent.Migration.psm1'
+if (-not (Test-Path -LiteralPath $MigrationModule)) {
+    throw "迁移模块不存在：$MigrationModule"
+}
+Import-Module $MigrationModule -Force
 
 $PackageDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $AcceptanceMode = $env:SCREENAGENT_ACCEPTANCE_MODE -eq '1'
@@ -43,13 +48,28 @@ $AppDir = Join-Path $Root 'app'
 $ConfigDir = Join-Path $Root 'config'
 $DocsDir = Join-Path $Root 'docs'
 $Desktop = if ($AcceptanceMode) { Join-Path $Root 'desktop' } else { [Environment]::GetFolderPath('Desktop') }
-$TaskSpec = Get-ScreenAgentScheduledTaskSpec -AppDirectory $AppDir
-$TaskName = $TaskSpec.TaskName
+$TaskName = 'ScreenAgent-AutoUpload'
 
 Write-Host ''
 Write-Host 'ScreenAgent 安装程序' -ForegroundColor Green
 Write-Host '安装目录：' $Root
 Write-Host ''
+
+if ($AcceptanceMode -and $env:SCREENAGENT_ACCEPTANCE_SKIP_TASK -eq '1') {
+    Write-Warn '验收模式：跳过真实计划任务迁移。'
+}
+else {
+    Write-Step '检查并移除旧版后台计划任务'
+    $TaskMigration = Remove-ScreenAgentKnownScheduledTask -ScreenAgentRoot $Root -TaskName $TaskName
+    if ($TaskMigration.Removed) {
+        Write-Step "已移除旧后台任务（$($TaskMigration.ActionKind)）"
+    }
+}
+
+$LegacyWorkerMigration = Move-ScreenAgentLegacyWorkerToBackup -ScreenAgentRoot $Root
+if ($LegacyWorkerMigration.Moved) {
+    Write-Step "已隔离旧删除脚本：$($LegacyWorkerMigration.Destination)"
+}
 
 Write-Step '创建目录结构'
 $Dirs = @(
@@ -72,10 +92,11 @@ Write-Step '复制程序文件'
 $Files = @(
     'config_wizard.ps1',
     'start_recording.ps1',
-    'auto_archive.ps1',
+    'session_worker.ps1',
+    'recover_pending.ps1',
     'uninstall.ps1',
     'view_logs.ps1',
-    'run_auto_archive_hidden.vbs',
+    'run_session_worker_hidden.vbs',
     'README.md',
     '版本信息.json',
     '发行说明.md'
@@ -94,7 +115,10 @@ if (Test-Path -LiteralPath (Join-Path $PackageDir 'config\config.json')) {
 }
 
 $ConfigPath = Join-Path $ConfigDir 'config.json'
-if ($AcceptanceMode -and -not [string]::IsNullOrWhiteSpace($env:SCREENAGENT_UNATTENDED_CONFIG)) {
+if (Test-Path -LiteralPath $ConfigPath -PathType Leaf) {
+    Write-Step '检测到现有配置，升级时予以保留'
+}
+elseif ($AcceptanceMode -and -not [string]::IsNullOrWhiteSpace($env:SCREENAGENT_UNATTENDED_CONFIG)) {
     Write-Step '验收模式：导入非交互测试配置'
     Copy-Item -LiteralPath $env:SCREENAGENT_UNATTENDED_CONFIG -Destination $ConfigPath -Force
 }
@@ -110,13 +134,13 @@ if (-not (Test-Path -LiteralPath $ConfigPath)) {
     throw "配置文件未生成：$ConfigPath"
 }
 $Config = Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
-$TaskName = 'ScreenAgent-AutoUpload'
 $ShortcutBaseName = ConvertTo-ScreenAgentSafeSegment -Value ([string]$Config.shortcut_name) -Fallback '启动录制-ScreenAgent'
 $ProductName = ConvertTo-ScreenAgentSafeSegment -Value ([string]$Config.product_name) -Fallback 'ScreenAgent'
 
 Write-Step '创建桌面快捷方式'
 $StartShortcut = Join-Path $Desktop ($ShortcutBaseName + '.lnk')
 $LogShortcut = Join-Path $Desktop ("查看 $ProductName 日志.lnk")
+$RecoveryShortcut = Join-Path $Desktop ("恢复未归档录像-$ProductName.lnk")
 New-Shortcut `
     -ShortcutPath $StartShortcut `
     -TargetPath 'powershell.exe' `
@@ -129,34 +153,14 @@ New-Shortcut `
     -Arguments ('-NoProfile -ExecutionPolicy Bypass -File "{0}"' -f (Join-Path $AppDir 'view_logs.ps1')) `
     -WorkingDirectory $AppDir `
     -Description "查看 $ProductName 日志"
+New-Shortcut `
+    -ShortcutPath $RecoveryShortcut `
+    -TargetPath 'powershell.exe' `
+    -Arguments ('-NoProfile -ExecutionPolicy Bypass -File "{0}"' -f (Join-Path $AppDir 'recover_pending.ps1')) `
+    -WorkingDirectory $AppDir `
+    -Description '一次性处理 raw 中未归档的 ScreenAgent 录像'
 
-Write-Step '注册后台计划任务'
-if ($AcceptanceMode -and $env:SCREENAGENT_ACCEPTANCE_SKIP_TASK -eq '1') {
-    Write-Warn '验收模式：跳过真实计划任务注册。'
-}
-else {
-try {
-    $Existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-    if ($Existing) {
-        Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
-    }
-    $Action = New-ScheduledTaskAction -Execute $TaskSpec.Execute -Argument $TaskSpec.Argument
-    $Trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
-    $Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew
-    Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Settings $Settings -Description 'ScreenAgent 后台上传任务' -Force | Out-Null
-    Start-ScheduledTask -TaskName $TaskName
-    $Created = Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop
-    if (-not $Created) {
-        throw "计划任务未创建成功：$TaskName"
-    }
-    Write-Step '后台任务已启动'
-}
-catch {
-    Write-Warn "计划任务创建失败：$($_.Exception.Message)"
-    Write-Warn '可手动运行后台脚本：'
-    Write-Host ('powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{0}"' -f (Join-Path $AppDir 'auto_archive.ps1'))
-}
-}
+Write-Step '未创建开机常驻任务；后台处理将在录制会话中按需启动'
 
 Write-Host ''
 Write-Host '安装完成。' -ForegroundColor Green

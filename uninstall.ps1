@@ -10,6 +10,10 @@ $SecurityModule = Join-Path $PSScriptRoot 'lib\ScreenAgent.Security.psm1'
 if (Test-Path -LiteralPath $SecurityModule) {
     Import-Module $SecurityModule -Force
 }
+$MigrationModule = Join-Path $PSScriptRoot 'lib\ScreenAgent.Migration.psm1'
+if (Test-Path -LiteralPath $MigrationModule) {
+    Import-Module $MigrationModule -Force
+}
 $AcceptanceMode = $env:SCREENAGENT_ACCEPTANCE_MODE -eq '1'
 if ($AcceptanceMode -and -not (Get-Command Resolve-ScreenAgentInstallRoot -ErrorAction SilentlyContinue)) {
     throw '验收模式需要安全模块。'
@@ -39,8 +43,10 @@ $Desktop = if ($AcceptanceMode) { Join-Path $Root 'desktop' } else { [Environmen
 $Shortcuts = @(
     (Join-Path $Desktop ($ShortcutName + '.lnk')),
     (Join-Path $Desktop ("查看 $ProductName 日志.lnk")),
+    (Join-Path $Desktop ("恢复未归档录像-$ProductName.lnk")),
     (Join-Path $Desktop '启动录制-ScreenAgent.lnk'),
-    (Join-Path $Desktop '查看 ScreenAgent 日志.lnk')
+    (Join-Path $Desktop '查看 ScreenAgent 日志.lnk'),
+    (Join-Path $Desktop '恢复未归档录像-ScreenAgent.lnk')
 )
 
 Write-Host ''
@@ -52,20 +58,23 @@ if ($AcceptanceMode -and $env:SCREENAGENT_ACCEPTANCE_SKIP_TASK -eq '1') {
     Write-Host '验收模式：跳过真实计划任务操作。'
 }
 else {
-try {
-    $Task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-    if ($Task) {
-        Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-        Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
-        Write-Host "已删除计划任务：$TaskName"
+    try {
+        if (Get-Command Remove-ScreenAgentKnownScheduledTask -ErrorAction SilentlyContinue) {
+            $TaskResult = Remove-ScreenAgentKnownScheduledTask -ScreenAgentRoot $Root -TaskName $TaskName
+            if ($TaskResult.Removed) {
+                Write-Host "已安全移除旧计划任务：$TaskName"
+            }
+            else {
+                Write-Host "计划任务不存在：$TaskName"
+            }
+        }
+        else {
+            Write-Host '迁移模块不可用，未改动任何计划任务。' -ForegroundColor Yellow
+        }
     }
-    else {
-        Write-Host "计划任务不存在：$TaskName"
+    catch {
+        Write-Host "计划任务未改动：$($_.Exception.Message)" -ForegroundColor Yellow
     }
-}
-catch {
-    Write-Host "删除计划任务失败：$($_.Exception.Message)" -ForegroundColor Yellow
-}
 }
 
 Write-Step '删除桌面快捷方式'

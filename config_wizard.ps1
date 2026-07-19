@@ -165,7 +165,7 @@ function Write-InstallReport {
         "- OBS 路径：$($Config.obs_exe)",
         "- 录制目录：$(Join-Path $Config.base_dir 'recordings\raw')",
         "- 云端路径：$($Config.remote_root)",
-        "- 后台任务名：$($Config.task_name)",
+        "- 后台处理：开始录制时按需启动，处理完成后自动退出",
         "- 本地处理策略：$Strategy",
         "",
         "## 如何启动",
@@ -297,12 +297,11 @@ $Config = [ordered]@{
     cloud_folder_name = $CloudFolderName
     remote_root = $RemoteRoot
     cleanup_mode = $CleanupMode
-    task_name = 'ScreenAgent-AutoUpload'
     scan_interval_seconds = 15
     stable_seconds = 12
     cloud_type = $CloudType
     shortcut_name = $ShortcutName
-    config_version = 3
+    config_version = 4
 }
 
 $Utf8Bom = New-Object System.Text.UTF8Encoding($true)

@@ -136,20 +136,6 @@ function Protect-ScreenAgentCredentialFile {
     Set-Acl -LiteralPath $Path -AclObject $Acl
 }
 
-function Get-ScreenAgentScheduledTaskSpec {
-    [CmdletBinding()]
-    param([Parameter(Mandatory = $true)][string]$AppDirectory)
-
-    $ResolvedApp = [System.IO.Path]::GetFullPath($AppDirectory)
-    $Worker = Join-Path $ResolvedApp 'run_auto_archive_hidden.vbs'
-    return [pscustomobject]@{
-        TaskName = 'ScreenAgent-AutoUpload'
-        Execute = 'wscript.exe'
-        Argument = ('"{0}"' -f $Worker)
-        WorkerPath = $Worker
-    }
-}
-
 function Remove-ScreenAgentProgramDirectory {
     [CmdletBinding()]
     param(
@@ -296,7 +282,6 @@ Export-ModuleMember -Function @(
     'ConvertTo-ScreenAgentSafeSegment',
     'Assert-ScreenAgentHttpsUrl',
     'Protect-ScreenAgentCredentialFile',
-    'Get-ScreenAgentScheduledTaskSpec',
     'Remove-ScreenAgentProgramDirectory',
     'Resolve-ScreenAgentInstallRoot',
     'Test-ScreenAgentPathWithinRoot',

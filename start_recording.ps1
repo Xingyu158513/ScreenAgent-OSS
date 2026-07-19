@@ -64,18 +64,31 @@ $Category = Read-Default '分类 category' 'study'
 $Topic = Read-Default '主题 topic' 'general'
 $CleanupMode = Get-CleanupMode
 
-$SessionId = Get-Date -Format 'yyyyMMdd-HHmmss'
+$SessionId = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
+$SessionStartedAt = Get-Date
+$VideoExtensions = @('.mkv', '.mp4', '.mov')
+$BaselineFiles = @(Get-ChildItem -LiteralPath $RawDir -File -ErrorAction SilentlyContinue |
+    Where-Object { $VideoExtensions -contains $_.Extension.ToLowerInvariant() } |
+    ForEach-Object {
+        [ordered]@{
+            path = $_.FullName
+            length = [Int64]$_.Length
+            last_write_utc = $_.LastWriteTimeUtc.ToString('o')
+        }
+    })
 $Session = [ordered]@{
     id = $SessionId
     category = $Category
     topic = $Topic
     title = $Title
-    start_time = (Get-Date).ToString('s')
+    start_time = $SessionStartedAt.ToString('s')
+    start_time_utc = $SessionStartedAt.ToUniversalTime().ToString('o')
     status = 'recording'
     cleanup_mode = $CleanupMode
+    baseline_files = $BaselineFiles
 }
 
-$SessionPath = Join-Path $SessionDir 'current_session.json'
+$SessionPath = Join-Path $SessionDir ($SessionId + '.json')
 $Utf8Bom = New-Object System.Text.UTF8Encoding($true)
 [System.IO.File]::WriteAllText($SessionPath, ($Session | ConvertTo-Json -Depth 5), $Utf8Bom)
 
@@ -95,4 +108,34 @@ Write-Host "OBS 路径：$ObsPath"
 Write-Host "请确认 OBS 录制路径为：$RawDir"
 Write-Host ''
 
-Start-Process -FilePath $ObsPath -ArgumentList '--startrecording'
+$HiddenWorker = Join-Path $PSScriptRoot 'run_session_worker_hidden.vbs'
+$WscriptPath = Join-Path $env:SystemRoot 'System32\wscript.exe'
+$ObsWorkingDirectory = Split-Path -Parent $ObsPath
+try {
+    Start-Process -FilePath $ObsPath -WorkingDirectory $ObsWorkingDirectory -ArgumentList '--startrecording' -ErrorAction Stop | Out-Null
+}
+catch {
+    $Session.status = 'obs_start_failed'
+    $Session | Add-Member -NotePropertyName worker_reason -NotePropertyValue $_.Exception.Message -Force
+    [System.IO.File]::WriteAllText($SessionPath, ($Session | ConvertTo-Json -Depth 5), $Utf8Bom)
+    throw "OBS 启动失败：$($_.Exception.Message)"
+}
+
+if (-not (Test-Path -LiteralPath $HiddenWorker -PathType Leaf)) {
+    Write-Host "后台 worker 启动器不存在：$HiddenWorker" -ForegroundColor Yellow
+    Write-Host 'OBS 已开始录制；本次文件将保留在 raw，并可在下次启动时恢复处理。' -ForegroundColor Yellow
+    exit 0
+}
+
+try {
+    $WorkerArguments = '"{0}" "{1}"' -f $HiddenWorker, $SessionPath
+    Start-Process -FilePath $WscriptPath -ArgumentList $WorkerArguments -WindowStyle Hidden -ErrorAction Stop | Out-Null
+    Write-Host '会话后台处理已启动；录制完成后会自动归档并退出。' -ForegroundColor Green
+}
+catch {
+    $Session.status = 'worker_start_failed'
+    $Session | Add-Member -NotePropertyName worker_reason -NotePropertyValue $_.Exception.Message -Force
+    [System.IO.File]::WriteAllText($SessionPath, ($Session | ConvertTo-Json -Depth 5), $Utf8Bom)
+    Write-Host "后台 worker 启动失败：$($_.Exception.Message)" -ForegroundColor Yellow
+    Write-Host 'OBS 已开始录制；本次文件不会自动移动，可在下次启动时恢复处理。' -ForegroundColor Yellow
+}
