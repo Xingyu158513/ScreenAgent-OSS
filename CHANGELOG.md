@@ -21,7 +21,9 @@
 
 ### Changed
 
-- Renamed the background worker to `auto_archive.ps1` to reflect non-destructive behavior.
+- Split the previous all-purpose worker into a bounded `session_worker.ps1`, an explicit one-shot `recover_pending.ps1`, and a shared archive module.
+- Isolated legacy scheduled-task migration from runtime security helpers.
+- Removed `RunMode`, `current_session.json`, and runtime `task_name` configuration.
 - Acceptance-only overrides are restricted to an explicit root under the Windows temporary directory.
 - Removed the login-triggered permanent scanner. Recording now starts a hidden, bounded session worker that exits after processing, timeout, or a fatal configuration error.
 - Upgrades safely stop and unregister known legacy ScreenAgent tasks and quarantine the old `auto_upload_delete.ps1` without touching recordings, configuration, logs, or sessions.

@@ -89,10 +89,8 @@ $Session = [ordered]@{
 }
 
 $SessionPath = Join-Path $SessionDir ($SessionId + '.json')
-$CurrentSessionPath = Join-Path $SessionDir 'current_session.json'
 $Utf8Bom = New-Object System.Text.UTF8Encoding($true)
 [System.IO.File]::WriteAllText($SessionPath, ($Session | ConvertTo-Json -Depth 5), $Utf8Bom)
-[System.IO.File]::WriteAllText($CurrentSessionPath, ($Session | ConvertTo-Json -Depth 5), $Utf8Bom)
 
 $ObsPath = Find-Obs -Config $Config
 if (-not $ObsPath) {
@@ -110,7 +108,7 @@ Write-Host "OBS 路径：$ObsPath"
 Write-Host "请确认 OBS 录制路径为：$RawDir"
 Write-Host ''
 
-$HiddenWorker = Join-Path $PSScriptRoot 'run_auto_archive_hidden.vbs'
+$HiddenWorker = Join-Path $PSScriptRoot 'run_session_worker_hidden.vbs'
 $WscriptPath = Join-Path $env:SystemRoot 'System32\wscript.exe'
 $ObsWorkingDirectory = Split-Path -Parent $ObsPath
 try {
@@ -130,7 +128,7 @@ if (-not (Test-Path -LiteralPath $HiddenWorker -PathType Leaf)) {
 }
 
 try {
-    $WorkerArguments = '"{0}" Session "{1}"' -f $HiddenWorker, $SessionPath
+    $WorkerArguments = '"{0}" "{1}"' -f $HiddenWorker, $SessionPath
     Start-Process -FilePath $WscriptPath -ArgumentList $WorkerArguments -WindowStyle Hidden -ErrorAction Stop | Out-Null
     Write-Host '会话后台处理已启动；录制完成后会自动归档并退出。' -ForegroundColor Green
 }

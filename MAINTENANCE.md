@@ -29,7 +29,7 @@ A release requires:
 - no plaintext credentials, user paths, recordings, logs, or rclone configs in the repository or archive;
 - an updated changelog;
 - a verified SHA-256 file for the Windows archive;
-- manual installation, OBS launch, scheduled-task, WebDAV upload, verification-failure, local-move, and uninstall checks on a disposable Windows account;
+- manual installation, OBS launch, legacy-task migration, WebDAV upload, verification-failure, local-move, and uninstall checks on a disposable Windows account;
 - confirmation that recordings and configuration survive uninstall.
 - confirmation that installation leaves no ScreenAgent logon task and no idle PowerShell scanner.
 - confirmation that a recording session worker exits after processing or its configured timeout.

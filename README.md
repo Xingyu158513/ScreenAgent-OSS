@@ -4,7 +4,7 @@ Windows 上面向普通用户的 OBS 自动录屏与安全归档工具。
 
 ScreenAgent 启动 OBS 录制，为视频添加标题和分类，并在录制结束后将稳定文件归档到本地或上传到 WebDAV。公开版坚持“先验证、后移动、永不自动永久删除”。
 
-后台归档不再随 Windows 登录常驻运行。每次开始录制时，ScreenAgent 会隐藏启动一个只属于本次会话的 worker；处理完成、启动后未发现录像或达到最长会话期限时，worker 会自动退出。下次开始录制时会安全检查遗留在 `recordings\raw` 的稳定文件。
+后台归档不再随 Windows 登录常驻运行。每次开始录制时，ScreenAgent 会隐藏启动一个只属于本次会话的 worker；处理完成、启动后未发现录像或达到最长会话期限时，worker 会自动退出。异常遗留在 `recordings\raw` 的文件由桌面“恢复未归档录像”快捷方式进行一次性恢复，不会启动常驻扫描。
 
 ## 适用场景
 
@@ -44,10 +44,10 @@ ScreenAgent 启动 OBS 录制，为视频添加标题和分类，并在录制结
 6. 在 OBS 中把录制目录设为 `%USERPROFILE%\ScreenAgent\recordings\raw`。
 7. 使用桌面快捷方式开始录制。
 
-安装器会创建当前用户的计划任务 `ScreenAgent-AutoUpload`。如果创建失败，可以手动运行：
+安装器不会创建登录计划任务。录制时的会话 worker 会自动启动并在完成后退出；若上传失败或异常退出，先保留 `raw` 中的文件，再运行：
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\ScreenAgent\app\auto_archive.ps1"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\ScreenAgent\app\recover_pending.ps1"
 ```
 
 ## 本地处理策略
@@ -80,12 +80,13 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\run_tests.ps1
 ## 项目结构
 
 ```text
-lib/                         可测试的密码、路径与本地文件安全核心
+lib/                         归档、安全边界与旧版本迁移模块
 tests/                       无外部依赖的 PowerShell 测试
 config_wizard.ps1            交互式配置向导
 start_recording.ps1          创建录制会话并启动 OBS
-auto_archive.ps1             稳定文件检测、上传验证与安全归档
-install.ps1                  当前用户安装与计划任务注册
+session_worker.ps1           有明确期限的单会话处理器
+recover_pending.ps1          用户主动执行的一次性遗留文件恢复
+install.ps1                  当前用户安装与旧常驻任务迁移
 uninstall.ps1                保留用户数据的卸载流程
 docs/                        使用和安全文档
 ```

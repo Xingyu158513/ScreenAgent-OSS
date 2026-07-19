@@ -4,6 +4,8 @@ Set-StrictMode -Version 2.0
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $ModulePath = Join-Path $ProjectRoot 'lib\ScreenAgent.Security.psm1'
 Import-Module $ModulePath -Force
+$MigrationModulePath = Join-Path $ProjectRoot 'lib\ScreenAgent.Migration.psm1'
+Import-Module $MigrationModulePath -Force
 
 $script:Passed = 0
 $script:Failed = 0
@@ -185,15 +187,15 @@ Invoke-Test 'Credential file inheritance is removed and current user retains acc
 }
 
 Invoke-Test 'Cloud commands use the ScreenAgent-specific rclone config' {
-    $Uploader = Get-Content -LiteralPath (Join-Path $ProjectRoot 'auto_archive.ps1') -Raw -Encoding UTF8
+    $Uploader = Get-Content -LiteralPath (Join-Path $ProjectRoot 'lib\ScreenAgent.Archive.psm1') -Raw -Encoding UTF8
     $Wizard = Get-Content -LiteralPath (Join-Path $ProjectRoot 'config_wizard.ps1') -Raw -Encoding UTF8
-    Assert-True ($Uploader -match '@\(''--config'', \$script:RcloneConfigPath\)') 'Uploader must prepend the dedicated config path.'
+    Assert-True ($Uploader.Contains("@('--config', `$script:RcloneConfigPath)")) 'Uploader must prepend the dedicated config path.'
     Assert-True ($Wizard -match 'rclone_config_path') 'Wizard must persist the dedicated config path.'
     Assert-True ($Wizard -match 'Protect-ScreenAgentCredentialFile') 'Wizard must restrict credential file access.'
 }
 
 Invoke-Test 'Production scripts contain no automatic permanent-delete mode' {
-    $Uploader = Get-Content -LiteralPath (Join-Path $ProjectRoot 'auto_archive.ps1') -Raw -Encoding UTF8
+    $Uploader = Get-Content -LiteralPath (Join-Path $ProjectRoot 'lib\ScreenAgent.Archive.psm1') -Raw -Encoding UTF8
     $Starter = Get-Content -LiteralPath (Join-Path $ProjectRoot 'start_recording.ps1') -Raw -Encoding UTF8
     $Wizard = Get-Content -LiteralPath (Join-Path $ProjectRoot 'config_wizard.ps1') -Raw -Encoding UTF8
     Assert-True ($Uploader -notmatch 'Remove-Item') 'Uploader must not permanently delete files.'
@@ -274,7 +276,7 @@ Invoke-Test 'Legacy scheduled-task action recognition is exact and rejects unrel
         Arguments = '-NoProfile -Command "Write-Host unrelated"'
     }
     Assert-Equal 'LegacyPowerShell' (Get-ScreenAgentScheduledTaskActionKind -Action $Legacy -ScreenAgentRoot $Root) 'Exact legacy worker action must be recognized.'
-    Assert-Equal 'HiddenWorker' (Get-ScreenAgentScheduledTaskActionKind -Action $Hidden -ScreenAgentRoot $Root) 'Exact hidden worker action must be recognized for migration.'
+    Assert-Equal 'LegacyHiddenWorker' (Get-ScreenAgentScheduledTaskActionKind -Action $Hidden -ScreenAgentRoot $Root) 'Exact hidden worker action must be recognized for migration.'
     Assert-Equal 'Unknown' (Get-ScreenAgentScheduledTaskActionKind -Action $SiblingPrefix -ScreenAgentRoot $Root) 'Sibling-prefix paths must not be treated as ScreenAgent.'
     Assert-Equal 'Unknown' (Get-ScreenAgentScheduledTaskActionKind -Action $Unrelated -ScreenAgentRoot $Root) 'An unrelated same-name task action must be rejected.'
 
@@ -319,7 +321,7 @@ Invoke-Test 'Legacy delete worker is quarantined without touching recordings or 
 }
 
 Invoke-Test 'Archive worker has no unconditional permanent loop' {
-    $WorkerPath = Join-Path $ProjectRoot 'auto_archive.ps1'
+    $WorkerPath = Join-Path $ProjectRoot 'session_worker.ps1'
     $Ast = Get-ScriptAst -Path $WorkerPath
     $InfiniteLoops = @($Ast.FindAll({
         param($Node)
@@ -331,25 +333,24 @@ Invoke-Test 'Archive worker has no unconditional permanent loop' {
 }
 
 Invoke-Test 'Session worker never assigns a baseline file to the new session' {
-    $Worker = Get-Content -LiteralPath (Join-Path $ProjectRoot 'auto_archive.ps1') -Raw -Encoding UTF8
+    $Worker = Get-Content -LiteralPath (Join-Path $ProjectRoot 'session_worker.ps1') -Raw -Encoding UTF8
     Assert-True ($Worker -match 'A path that already existed before this session never belongs') 'Worker must explicitly keep baseline paths out of the new session.'
     Assert-True ($Worker -notmatch '\$File\.Length\s+-ne\s+\$BaselineLength') 'A growing baseline file must not be reclassified as a new-session file.'
 }
 
 Invoke-Test 'Recording launcher and VBS wrapper use a bounded per-session worker' {
     $Starter = Get-Content -LiteralPath (Join-Path $ProjectRoot 'start_recording.ps1') -Raw -Encoding UTF8
-    $Wrapper = Get-Content -LiteralPath (Join-Path $ProjectRoot 'run_auto_archive_hidden.vbs') -Raw -Encoding UTF8
-    $Worker = Get-Content -LiteralPath (Join-Path $ProjectRoot 'auto_archive.ps1') -Raw -Encoding UTF8
-    $HasValidateSet = $Worker -match '(?i)ValidateSet\s*\(\s*[''"]Session[''"]\s*,\s*[''"]Recovery[''"]\s*\)'
-    $HasExplicitEnumCheck = $Worker -match '(?i)RunMode\s+-notin\s+@\(\s*[''"]Session[''"]\s*,\s*[''"]Recovery[''"]\s*\)'
-    Assert-True ($HasValidateSet -or $HasExplicitEnumCheck) 'Worker RunMode must be restricted to Session or Recovery.'
+    $Wrapper = Get-Content -LiteralPath (Join-Path $ProjectRoot 'run_session_worker_hidden.vbs') -Raw -Encoding UTF8
+    $Worker = Get-Content -LiteralPath (Join-Path $ProjectRoot 'session_worker.ps1') -Raw -Encoding UTF8
+    Assert-True ($Worker -notmatch '(?i)RunMode') 'Session worker must not contain a multi-purpose mode switch.'
     Assert-True ($Worker -match '(?i)SessionPath') 'Worker must accept an explicit session path.'
-    Assert-True ($Worker -match 'Test-ScreenAgentPathWithinRoot') 'Worker must validate that SessionPath stays inside sessions_dir.'
-    Assert-True ($Starter -match 'run_auto_archive_hidden\.vbs') 'Recording launcher must invoke the hidden worker wrapper.'
-    Assert-True ($Starter -match '(?i)WorkerArguments\s*=.*\bSession\b') 'Recording launcher must request Session mode.'
+    Assert-True ($Worker -match 'Resolve-ScreenAgentSessionPath') 'Worker must validate that SessionPath stays inside sessions_dir.'
+    Assert-True ($Starter -match 'run_session_worker_hidden\.vbs') 'Recording launcher must invoke the hidden session wrapper.'
+    Assert-True ($Starter -notmatch '(?i)WorkerArguments\s*=.*\bSession\b') 'Recording launcher must not pass a mode switch.'
     Assert-True ($Starter -match '(?i)SessionPath|SessionFile|SessionJson') 'Recording launcher must pass the newly created session file to the worker.'
-    Assert-True ($Wrapper -match '(?i)Session') 'VBS wrapper must accept Session mode.'
-    Assert-True ($Wrapper -match '(?i)Recovery') 'VBS wrapper must restrict operation to the supported modes.'
+    Assert-True ($Wrapper -match 'WScript\.Arguments\.Count\s*<>\s*1') 'VBS wrapper must accept exactly one session path.'
+    Assert-True ($Wrapper -match 'session_worker\.ps1') 'VBS wrapper must target only the session worker.'
+    Assert-True ($Wrapper -notmatch '(?i)Recovery|RunMode') 'VBS wrapper must not expose recovery or mode switching.'
     Assert-True ($Wrapper -match '(?i)SessionPath|sessionPath|sessionFile|WScript\.Arguments') 'VBS wrapper must forward the explicit session file.'
 }
 
@@ -389,7 +390,7 @@ Invoke-Test 'Empty session worker exits within a deterministic timeout' {
     try {
         $Info = New-Object System.Diagnostics.ProcessStartInfo
         $Info.FileName = 'powershell.exe'
-        $Info.Arguments = ('-NoProfile -ExecutionPolicy Bypass -File "{0}" -RunMode Session -SessionPath "{1}" -NoFileTimeoutSeconds 5 -DeadlineMinutes 1 -QuietSeconds 1' -f (Join-Path $ProjectRoot 'auto_archive.ps1'), $SessionPath)
+        $Info.Arguments = ('-NoProfile -ExecutionPolicy Bypass -File "{0}" -SessionPath "{1}" -NoFileTimeoutSeconds 5 -DeadlineMinutes 1 -QuietSeconds 1' -f (Join-Path $ProjectRoot 'session_worker.ps1'), $SessionPath)
         $Info.UseShellExecute = $false
         $Info.CreateNoWindow = $true
         $Info.EnvironmentVariables['SCREENAGENT_ACCEPTANCE_MODE'] = '1'
@@ -451,7 +452,7 @@ Invoke-Test 'Session worker processes one new recording and exits' {
     try {
         $Info = New-Object System.Diagnostics.ProcessStartInfo
         $Info.FileName = 'powershell.exe'
-        $Info.Arguments = ('-NoProfile -ExecutionPolicy Bypass -File "{0}" -RunMode Session -SessionPath "{1}" -NoFileTimeoutSeconds 10 -DeadlineMinutes 1 -QuietSeconds 1' -f (Join-Path $ProjectRoot 'auto_archive.ps1'), $SessionPath)
+        $Info.Arguments = ('-NoProfile -ExecutionPolicy Bypass -File "{0}" -SessionPath "{1}" -NoFileTimeoutSeconds 10 -DeadlineMinutes 1 -QuietSeconds 1' -f (Join-Path $ProjectRoot 'session_worker.ps1'), $SessionPath)
         $Info.UseShellExecute = $false
         $Info.CreateNoWindow = $true
         $Info.EnvironmentVariables['SCREENAGENT_ACCEPTANCE_MODE'] = '1'

@@ -24,7 +24,7 @@ foreach ($Source in $PackageRootFiles) {
     Copy-Item -LiteralPath $Source.FullName -Destination (Join-Path $Stage $Source.Name) -Force
 }
 
-foreach ($Required in @('install.ps1', 'config_wizard.ps1', 'start_recording.ps1', 'auto_archive.ps1', 'uninstall.ps1', 'LICENSE')) {
+foreach ($Required in @('install.ps1', 'config_wizard.ps1', 'start_recording.ps1', 'session_worker.ps1', 'recover_pending.ps1', 'run_session_worker_hidden.vbs', 'uninstall.ps1', 'LICENSE')) {
     if (-not (Test-Path -LiteralPath (Join-Path $Stage $Required))) {
         throw "Missing package file: $Required"
     }

@@ -32,6 +32,11 @@ if (-not (Test-Path -LiteralPath $SecurityModule)) {
     throw "安全模块不存在：$SecurityModule"
 }
 Import-Module $SecurityModule -Force
+$MigrationModule = Join-Path $PSScriptRoot 'lib\ScreenAgent.Migration.psm1'
+if (-not (Test-Path -LiteralPath $MigrationModule)) {
+    throw "迁移模块不存在：$MigrationModule"
+}
+Import-Module $MigrationModule -Force
 
 $PackageDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $AcceptanceMode = $env:SCREENAGENT_ACCEPTANCE_MODE -eq '1'
@@ -87,10 +92,11 @@ Write-Step '复制程序文件'
 $Files = @(
     'config_wizard.ps1',
     'start_recording.ps1',
-    'auto_archive.ps1',
+    'session_worker.ps1',
+    'recover_pending.ps1',
     'uninstall.ps1',
     'view_logs.ps1',
-    'run_auto_archive_hidden.vbs',
+    'run_session_worker_hidden.vbs',
     'README.md',
     '版本信息.json',
     '发行说明.md'
@@ -128,13 +134,13 @@ if (-not (Test-Path -LiteralPath $ConfigPath)) {
     throw "配置文件未生成：$ConfigPath"
 }
 $Config = Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
-$TaskName = 'ScreenAgent-AutoUpload'
 $ShortcutBaseName = ConvertTo-ScreenAgentSafeSegment -Value ([string]$Config.shortcut_name) -Fallback '启动录制-ScreenAgent'
 $ProductName = ConvertTo-ScreenAgentSafeSegment -Value ([string]$Config.product_name) -Fallback 'ScreenAgent'
 
 Write-Step '创建桌面快捷方式'
 $StartShortcut = Join-Path $Desktop ($ShortcutBaseName + '.lnk')
 $LogShortcut = Join-Path $Desktop ("查看 $ProductName 日志.lnk")
+$RecoveryShortcut = Join-Path $Desktop ("恢复未归档录像-$ProductName.lnk")
 New-Shortcut `
     -ShortcutPath $StartShortcut `
     -TargetPath 'powershell.exe' `
@@ -147,6 +153,12 @@ New-Shortcut `
     -Arguments ('-NoProfile -ExecutionPolicy Bypass -File "{0}"' -f (Join-Path $AppDir 'view_logs.ps1')) `
     -WorkingDirectory $AppDir `
     -Description "查看 $ProductName 日志"
+New-Shortcut `
+    -ShortcutPath $RecoveryShortcut `
+    -TargetPath 'powershell.exe' `
+    -Arguments ('-NoProfile -ExecutionPolicy Bypass -File "{0}"' -f (Join-Path $AppDir 'recover_pending.ps1')) `
+    -WorkingDirectory $AppDir `
+    -Description '一次性处理 raw 中未归档的 ScreenAgent 录像'
 
 Write-Step '未创建开机常驻任务；后台处理将在录制会话中按需启动'
 
